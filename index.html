@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="TaskFlow is a clean, local-first task manager built with plain HTML, CSS and vanilla JavaScript.">
+  <meta name="theme-color" content="#14161b">
   <title>TaskFlow — Task Manager</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e8b84b'/><path d='M8 17l5 5 11-13' fill='none' stroke='%2314161b' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
   <link rel="stylesheet" href="style.css">
@@ -19,10 +20,10 @@
           <path d="M4 12.5 9.5 18 20 6.5"></path>
         </svg>
       </span>
-      <span class="brand-text">
+      <div class="brand-text">
         <span class="brand-kicker">Task manager</span>
-        <span class="brand-name">TaskFlow</span>
-      </span>
+        <h1 class="brand-name">TaskFlow</h1>
+      </div>
     </div>
     <p class="header-note">
       <span class="status-dot" aria-hidden="true"></span>
@@ -34,24 +35,24 @@
     <p class="noscript-note">TaskFlow needs JavaScript enabled to run. Please enable it and reload the page.</p>
   </noscript>
 
-  <section class="stats" aria-label="Task statistics">
-    <div class="stat-card" data-tone="total">
+  <ul class="stats" aria-label="Task statistics">
+    <li class="stat-card" data-tone="total">
       <span class="stat-value" id="stat-total">0</span>
       <span class="stat-label">Total tasks</span>
-    </div>
-    <div class="stat-card" data-tone="pending">
+    </li>
+    <li class="stat-card" data-tone="pending">
       <span class="stat-value" id="stat-pending">0</span>
       <span class="stat-label">Pending</span>
-    </div>
-    <div class="stat-card" data-tone="completed">
+    </li>
+    <li class="stat-card" data-tone="completed">
       <span class="stat-value" id="stat-completed">0</span>
       <span class="stat-label">Completed</span>
-    </div>
-    <div class="stat-card" data-tone="high">
+    </li>
+    <li class="stat-card" data-tone="high">
       <span class="stat-value" id="stat-high">0</span>
       <span class="stat-label">High priority</span>
-    </div>
-  </section>
+    </li>
+  </ul>
 
   <main class="layout">
 
@@ -122,7 +123,7 @@
     <section class="panel tasks-panel" aria-labelledby="tasks-heading">
       <div class="panel-head tasks-head">
         <h2 class="panel-title" id="tasks-heading">Tasks</h2>
-        <p class="result-count" id="result-count">0 of 0</p>
+        <p class="result-count" id="result-count" aria-live="polite">Showing 0 of 0</p>
       </div>
 
       <div class="toolbar">
