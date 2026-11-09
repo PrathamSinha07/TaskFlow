@@ -70,14 +70,30 @@ That's it. Your tasks are saved to that browser's `localStorage` immediately aft
 
 ```
 todo-list-app/
-├── index.html    # Markup: header, stats, form, toolbar, list, empty state
-├── style.css     # Design tokens, layout, components, motion, responsive rules
-├── script.js     # App logic: storage, rendering, filters, search, CRUD
+├── index.html         # Markup: header, stats, form, toolbar, list, empty state
+├── style.css          # Design tokens, layout, components, motion, responsive rules
+├── script.js          # App logic: storage, rendering, filters, search, CRUD
+├── taskflow-core.js   # Pure task logic (validation, storage parsing, views)
+├── tests/             # Automated tests for taskflow-core.js
 ├── README.md
 └── .gitignore
 ```
 
 `script.js` is organised as one private IIFE with clearly named sections: *constants → state → storage → helpers → derived data → rendering → form handling → task actions → search/filters/keyboard → init*. All user-provided text is written with `textContent`; icons are built with `createElementNS`, so no user input is ever passed through `innerHTML`.
+
+---
+
+## Running the tests
+
+The task logic lives in `taskflow-core.js`, which the browser and the tests share. Tests use Node's built-in test runner — no dependencies to install.
+
+Requires Node.js 18 or newer:
+
+```bash
+node --test
+```
+
+Coverage: task creation and validation, editing, deletion, completion/reopening, filtering, search, statistics, due-date handling, LocalStorage round-trips and corrupted/invalid stored data.
 
 ---
 

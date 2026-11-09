@@ -9,9 +9,10 @@
 
   /* ---------- Constants ---------- */
 
+  // Pure task logic lives in taskflow-core.js so Node can test it directly.
+  const core = window.TaskFlowCore;
+
   const STORAGE_KEY = "taskflow.tasks";
-  const PRIORITIES = ["low", "medium", "high"];
-  const FILTERS = ["all", "active", "completed"];
 
   // Single-path icons so dynamically built buttons stay free of innerHTML.
   const ICON_PATHS = {
@@ -44,7 +45,7 @@
 
   /**
    * Reads tasks from LocalStorage. Any missing or corrupt data results in
-   * an empty list instead of a crash.
+   * an empty list instead of a crash (validation lives in the core).
    */
   function loadTasks() {
     let raw;
@@ -54,27 +55,12 @@
       console.warn("TaskFlow: browser storage is unavailable.", error);
       return [];
     }
-    if (!raw) return [];
 
-    try {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-
-      const tasks = [];
-      const seenIds = new Set();
-      for (const entry of parsed) {
-        const task = sanitizeTask(entry);
-        // Skip unusable entries and duplicate ids so the UI can target rows safely.
-        if (task && !seenIds.has(task.id)) {
-          seenIds.add(task.id);
-          tasks.push(task);
-        }
-      }
-      return tasks;
-    } catch (error) {
-      console.warn("TaskFlow: stored data was invalid, starting fresh.", error);
-      return [];
+    const tasks = core.parseStoredTasks(raw);
+    if (raw && tasks.length === 0 && raw.trim() !== "[]") {
+      console.warn("TaskFlow: stored data was invalid, starting fresh.");
     }
+    return tasks;
   }
 
   function saveTasks() {
@@ -86,77 +72,9 @@
     }
   }
 
-  /** Returns a well-formed task, or null when the entry is unusable. */
-  function sanitizeTask(entry) {
-    if (!entry || typeof entry !== "object") return null;
-
-    const title = typeof entry.title === "string" ? entry.title.trim() : "";
-    if (!title) return null;
-
-    return {
-      id:
-        typeof entry.id === "string" && entry.id.trim()
-          ? entry.id
-          : createTaskId(),
-      title: title.slice(0, 120),
-      description:
-        typeof entry.description === "string"
-          ? entry.description.slice(0, 500)
-          : "",
-      priority: PRIORITIES.includes(entry.priority) ? entry.priority : "medium",
-      dueDate: isValidDueDate(entry.dueDate) ? entry.dueDate : "",
-      completed: entry.completed === true
-    };
-  }
-
   /* =======================================================================
      Small helpers
      ======================================================================= */
-
-  function createTaskId() {
-    if (window.crypto && typeof window.crypto.randomUUID === "function") {
-      return window.crypto.randomUUID();
-    }
-    return (
-      "task-" +
-      Date.now().toString(36) +
-      "-" +
-      Math.random().toString(36).slice(2, 10)
-    );
-  }
-
-  /** Checks both the format and the real-world validity of "YYYY-MM-DD". */
-  function isValidDueDate(value) {
-    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return false;
-    }
-    const parts = value.split("-").map(Number);
-    const date = new Date(parts[0], parts[1] - 1, parts[2]);
-    return (
-      date.getFullYear() === parts[0] &&
-      date.getMonth() === parts[1] - 1 &&
-      date.getDate() === parts[2]
-    );
-  }
-
-  /** Local date string (never UTC) so "today" matches the user's timezone. */
-  function getTodayString() {
-    const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return now.getFullYear() + "-" + month + "-" + day;
-  }
-
-  function formatDueDate(value) {
-    const parts = value.split("-").map(Number);
-    const date = new Date(parts[0], parts[1] - 1, parts[2]);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric"
-    });
-  }
 
   function capitalize(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
@@ -200,33 +118,7 @@
 
   /** Tasks that match the current filter *and* the current search query. */
   function getVisibleTasks() {
-    const query = state.search.trim().toLowerCase();
-
-    return state.tasks.filter(function (task) {
-      const matchesFilter =
-        state.filter === "all" ||
-        (state.filter === "active" && !task.completed) ||
-        (state.filter === "completed" && task.completed);
-
-      const matchesSearch =
-        query === "" || task.title.toLowerCase().includes(query);
-
-      return matchesFilter && matchesSearch;
-    });
-  }
-
-  function countTasks() {
-    const total = state.tasks.length;
-    let pending = 0;
-    let completed = 0;
-    let high = 0;
-
-    for (const task of state.tasks) {
-      if (task.completed) completed += 1;
-      else pending += 1;
-      if (task.priority === "high") high += 1;
-    }
-    return { total, pending, completed, high };
+    return core.filterTasks(state.tasks, state.filter, state.search);
   }
 
   /**
@@ -234,17 +126,7 @@
    * A completed task is never shown as overdue.
    */
   function getDueDateInfo(task) {
-    if (!task.dueDate) return null;
-
-    const today = getTodayString();
-    let status = "upcoming";
-    if (task.dueDate < today) status = task.completed ? "past" : "overdue";
-    else if (task.dueDate === today) status = "today";
-
-    return {
-      status: status,
-      dateLabel: formatDueDate(task.dueDate)
-    };
+    return core.getDueDateInfo(task, core.getTodayString());
   }
 
   /* =======================================================================
@@ -261,7 +143,7 @@
   }
 
   function renderStats() {
-    const counts = countTasks();
+    const counts = core.countTasks(state.tasks);
     dom.statTotal.textContent = String(counts.total);
     dom.statPending.textContent = String(counts.pending);
     dom.statCompleted.textContent = String(counts.completed);
@@ -463,7 +345,7 @@
   function handleFormSubmit(event) {
     event.preventDefault();
 
-    const title = dom.titleInput.value.trim();
+    const title = core.normalizeTitle(dom.titleInput.value);
     if (!title) {
       showTitleError("Please enter a task title before saving.");
       dom.titleInput.focus();
@@ -472,13 +354,9 @@
 
     const values = {
       title: title,
-      description: dom.descriptionInput.value.trim(),
-      priority: PRIORITIES.includes(dom.priorityInput.value)
-        ? dom.priorityInput.value
-        : "medium",
-      dueDate: isValidDueDate(dom.dueDateInput.value)
-        ? dom.dueDateInput.value
-        : ""
+      description: dom.descriptionInput.value,
+      priority: dom.priorityInput.value,
+      dueDate: dom.dueDateInput.value
     };
 
     if (state.editingId) {
@@ -489,7 +367,13 @@
   }
 
   function addTask(values) {
-    const task = Object.assign({ id: createTaskId(), completed: false }, values);
+    const task = core.createTask(values);
+    if (!task) {
+      showTitleError("Please enter a task title before saving.");
+      dom.titleInput.focus();
+      return;
+    }
+
     state.tasks.unshift(task); // newest first
     state.highlightId = task.id;
 
@@ -500,7 +384,7 @@
   }
 
   function saveEdits(values) {
-    const task = findTask(state.editingId);
+    const task = core.updateTask(state.tasks, state.editingId, values);
     if (!task) {
       // The task vanished (e.g. cleared storage in another tab).
       resetForm();
@@ -508,10 +392,6 @@
       return;
     }
 
-    task.title = values.title;
-    task.description = values.description;
-    task.priority = values.priority;
-    task.dueDate = values.dueDate;
     state.highlightId = task.id;
 
     saveTasks();
@@ -591,10 +471,9 @@
      ======================================================================= */
 
   function toggleTask(taskId, isCompleted) {
-    const task = findTask(taskId);
+    const task = core.setTaskCompletion(state.tasks, taskId, isCompleted);
     if (!task) return;
 
-    task.completed = isCompleted;
     saveTasks();
     render();
     announce(
@@ -611,9 +490,7 @@
     );
     if (!confirmed) return;
 
-    state.tasks = state.tasks.filter(function (entry) {
-      return entry.id !== taskId;
-    });
+    state.tasks = core.deleteTask(state.tasks, taskId);
 
     if (state.editingId === taskId) resetForm();
     saveTasks();
@@ -649,7 +526,7 @@
     if (!button) return;
 
     const filter = button.dataset.filter;
-    if (!FILTERS.includes(filter)) return;
+    if (!core.FILTERS.includes(filter)) return;
 
     state.filter = filter;
     render();
