@@ -32,6 +32,7 @@
     tasks: [],
     filter: "all",
     search: "",
+    sort: "newest",
     editingId: null,
     highlightId: null // task row to flash once after add/edit
   };
@@ -116,9 +117,10 @@
      Derived data
      ======================================================================= */
 
-  /** Tasks that match the current filter *and* the current search query. */
+  /** Tasks that match the current filter *and* search, in the chosen order. */
   function getVisibleTasks() {
-    return core.filterTasks(state.tasks, state.filter, state.search);
+    const matching = core.filterTasks(state.tasks, state.filter, state.search);
+    return core.sortTasks(matching, state.sort);
   }
 
   /**
@@ -532,6 +534,16 @@
     render();
   }
 
+  function handleSortChange() {
+    const key = dom.sortSelect.value;
+    state.sort = core.SORT_KEYS.includes(key) ? key : "newest";
+    render();
+
+    const label =
+      dom.sortSelect.options[dom.sortSelect.selectedIndex]?.text || "Newest first";
+    announce("Sort order: " + label);
+  }
+
   function handleListChange(event) {
     const checkbox = event.target.closest('input[data-action="toggle"]');
     if (!checkbox || !dom.taskList.contains(checkbox)) return;
@@ -596,6 +608,7 @@
       cancelButton: document.getElementById("cancel-btn"),
       searchInput: document.getElementById("task-search"),
       clearSearchButton: document.getElementById("clear-search"),
+      sortSelect: document.getElementById("task-sort"),
       filterButtons: Array.from(document.querySelectorAll(".filter-btn")),
       resultCount: document.getElementById("result-count"),
       taskList: document.getElementById("task-list"),
@@ -613,6 +626,7 @@
 
     dom.searchInput.addEventListener("input", handleSearchInput);
     dom.clearSearchButton.addEventListener("click", clearSearch);
+    dom.sortSelect.addEventListener("change", handleSortChange);
 
     dom.filterButtons.forEach(function (button) {
       button.addEventListener("click", handleFilterClick);

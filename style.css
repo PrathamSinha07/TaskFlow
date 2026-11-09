@@ -551,6 +551,35 @@ input[type="search"].search-input {
   color: var(--accent-strong);
 }
 
+/* ---------- Sorting ---------- */
+.sort-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sort-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sort-select {
+  flex: 1 1 auto;
+  padding: 7px 34px 7px 12px;
+  border-color: var(--line);
+  border-radius: 12px;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.sort-select:hover {
+  border-color: #414958;
+}
+
 /* ---------- Task list ---------- */
 .task-list {
   display: flex;
@@ -871,6 +900,10 @@ input[type="search"].search-input {
   .filter-btn {
     flex: 1;
     padding-inline: 8px;
+  }
+
+  .sort-box {
+    width: 100%;
   }
 
   .task-item {

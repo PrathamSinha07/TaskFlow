@@ -249,6 +249,66 @@
     return { total: total, pending: pending, completed: completed, high: high };
   }
 
+  /* ---------- Sorting ---------- */
+
+  const SORT_KEYS = ["newest", "oldest", "title", "due", "priority"];
+
+  const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+
+  function compareTitles(a, b) {
+    const left = a.title.toLowerCase();
+    const right = b.title.toLowerCase();
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  }
+
+  /**
+   * Returns a new array ordered by the given key — the input is never
+   * mutated, so the stored creation order always survives.
+   *   newest   stored order (creation order, newest first) — the default
+   *   oldest   reverse creation order
+   *   title    A → Z, case-insensitive
+   *   due      soonest first, tasks without a due date last
+   *   priority High → Medium → Low
+   * Ties keep their original relative order (Array#sort is stable), and an
+   * unknown key falls back to the default order.
+   */
+  function sortTasks(tasks, key) {
+    const sorted = tasks.slice();
+
+    if (key === "oldest") {
+      return sorted.reverse();
+    }
+
+    if (key === "title") {
+      return sorted.sort(compareTitles);
+    }
+
+    if (key === "due") {
+      return sorted.sort(function (a, b) {
+        // Tasks without a due date always go to the end.
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        if (a.dueDate < b.dueDate) return -1;
+        if (a.dueDate > b.dueDate) return 1;
+        return 0;
+      });
+    }
+
+    if (key === "priority") {
+      return sorted.sort(function (a, b) {
+        const left = PRIORITY_RANK[a.priority];
+        const right = PRIORITY_RANK[b.priority];
+        return (left === undefined ? 3 : left) - (right === undefined ? 3 : right);
+      });
+    }
+
+    // "newest" and anything unknown: creation order as stored.
+    return sorted;
+  }
+
   /* ---------- Exports ---------- */
 
   const core = {
@@ -272,7 +332,9 @@
     formatDueDate: formatDueDate,
     getDueDateInfo: getDueDateInfo,
     filterTasks: filterTasks,
-    countTasks: countTasks
+    countTasks: countTasks,
+    SORT_KEYS: SORT_KEYS,
+    sortTasks: sortTasks
   };
 
   if (typeof module === "object" && module.exports) {
