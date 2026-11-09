@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="TaskFlow is a clean, local-first task manager built with plain HTML, CSS and vanilla JavaScript.">
+  <title>TaskFlow — Task Manager</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e8b84b'/><path d='M8 17l5 5 11-13' fill='none' stroke='%2314161b' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 12.5 9.5 18 20 6.5"></path>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-kicker">Task manager</span>
+        <span class="brand-name">TaskFlow</span>
+      </span>
+    </div>
+    <p class="header-note">
+      <span class="status-dot" aria-hidden="true"></span>
+      Everything stays in your browser
+    </p>
+  </header>
+
+  <noscript>
+    <p class="noscript-note">TaskFlow needs JavaScript enabled to run. Please enable it and reload the page.</p>
+  </noscript>
+
+  <section class="stats" aria-label="Task statistics">
+    <div class="stat-card" data-tone="total">
+      <span class="stat-value" id="stat-total">0</span>
+      <span class="stat-label">Total tasks</span>
+    </div>
+    <div class="stat-card" data-tone="pending">
+      <span class="stat-value" id="stat-pending">0</span>
+      <span class="stat-label">Pending</span>
+    </div>
+    <div class="stat-card" data-tone="completed">
+      <span class="stat-value" id="stat-completed">0</span>
+      <span class="stat-label">Completed</span>
+    </div>
+    <div class="stat-card" data-tone="high">
+      <span class="stat-value" id="stat-high">0</span>
+      <span class="stat-label">High priority</span>
+    </div>
+  </section>
+
+  <main class="layout">
+
+    <!-- Left panel: add / edit form -->
+    <section class="panel composer-panel" aria-labelledby="form-heading">
+      <div class="panel-head">
+        <h2 class="panel-title" id="form-heading">New task</h2>
+        <p class="panel-hint" id="form-hint" hidden>Editing an existing task</p>
+      </div>
+
+      <form id="task-form" novalidate>
+        <div class="field">
+          <label for="task-title">Task title <span class="req" aria-hidden="true">*</span></label>
+          <input
+            type="text"
+            id="task-title"
+            name="title"
+            placeholder="e.g. Review Q3 design mockups"
+            autocomplete="off"
+            maxlength="120"
+            required
+            aria-describedby="title-error">
+          <p class="field-error" id="title-error" role="alert" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="task-description">Description <span class="optional">(optional)</span></label>
+          <textarea
+            id="task-description"
+            name="description"
+            rows="3"
+            maxlength="500"
+            placeholder="Add a few details…"></textarea>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="task-priority">Priority</label>
+            <select id="task-priority" name="priority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="task-due-date">Due date</label>
+            <input type="date" id="task-due-date" name="dueDate">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <svg class="icon" id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+            <svg class="icon" id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+              <path d="M20 6 9 17l-5-5"></path>
+            </svg>
+            <span id="submit-label">Add task</span>
+          </button>
+          <button type="button" class="btn btn-ghost" id="cancel-btn" hidden>Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Right panel: filters, search, task list -->
+    <section class="panel tasks-panel" aria-labelledby="tasks-heading">
+      <div class="panel-head tasks-head">
+        <h2 class="panel-title" id="tasks-heading">Tasks</h2>
+        <p class="result-count" id="result-count">0 of 0</p>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-box">
+          <label class="visually-hidden" for="task-search">Search tasks by title</label>
+          <svg class="icon search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.4-4.4"></path>
+          </svg>
+          <input
+            type="search"
+            id="task-search"
+            class="search-input"
+            placeholder="Search by title…"
+            autocomplete="off">
+          <button type="button" class="search-clear" id="clear-search" aria-label="Clear search" hidden>
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="filters" role="group" aria-label="Filter tasks">
+          <button type="button" class="filter-btn is-active" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" class="filter-btn" data-filter="active" aria-pressed="false">Active</button>
+          <button type="button" class="filter-btn" data-filter="completed" aria-pressed="false">Completed</button>
+        </div>
+      </div>
+
+      <ul class="task-list" id="task-list" aria-labelledby="tasks-heading"></ul>
+
+      <div class="empty-state" id="empty-state" hidden>
+        <span class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9 2 2 4-4"></path>
+          </svg>
+        </span>
+        <h3 class="empty-title" id="empty-title">No tasks yet</h3>
+        <p class="empty-text" id="empty-text">Add your first task using the form and it will show up here.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <p>TaskFlow — plain HTML, CSS &amp; JavaScript. No accounts, no servers, no build step.</p>
+  </footer>
+
+  <!-- Announcements for screen readers (add, edit, delete, complete, …) -->
+  <p class="visually-hidden" role="status" aria-live="polite" id="live-status"></p>
+
+</body>
+</html>
