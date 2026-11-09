@@ -230,3 +230,38 @@ test("sanitizeTask generates an id when one is missing", () => {
   assert.ok(b.id.length > 0);
   assert.notEqual(a.id, b.id, "generated ids must differ");
 });
+
+/* ---------- Duplicate-submission guard ---------- */
+
+test("isDuplicateResubmit catches a stray re-submit inside the window", () => {
+  const submittedAt = 10_000;
+  assert.equal(core.isDuplicateResubmit(submittedAt, 10_000), true, "same instant");
+  assert.equal(core.isDuplicateResubmit(submittedAt, 10_500), true, "half a second later");
+  assert.equal(
+    core.isDuplicateResubmit(submittedAt, 10_000 + core.RESUBMIT_WINDOW_MS - 1),
+    true,
+    "just before the window closes"
+  );
+});
+
+test("isDuplicateResubmit allows submissions after the window", () => {
+  const submittedAt = 10_000;
+  assert.equal(
+    core.isDuplicateResubmit(submittedAt, 10_000 + core.RESUBMIT_WINDOW_MS),
+    false,
+    "exactly at the boundary"
+  );
+  assert.equal(core.isDuplicateResubmit(submittedAt, 60_000), false, "much later");
+});
+
+test("isDuplicateResubmit never fires without a prior successful submit", () => {
+  assert.equal(core.isDuplicateResubmit(null, Date.now()), false);
+  assert.equal(core.isDuplicateResubmit(undefined, 1_000), false);
+  assert.equal(core.isDuplicateResubmit("yesterday", 1_000), false);
+});
+
+test("isDuplicateResubmit ignores impossible clocks", () => {
+  // A timestamp in the future (clock skew) must not lock the user out.
+  assert.equal(core.isDuplicateResubmit(10_000, 9_000), false);
+  assert.equal(core.isDuplicateResubmit(10_000, "soon"), false);
+});

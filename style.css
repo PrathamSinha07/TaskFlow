@@ -391,6 +391,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: #f28d97;
 }
 
+.field-note {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+
 .form-actions {
   display: flex;
   gap: 10px;
@@ -814,6 +821,10 @@ input[type="search"].search-input {
   color: var(--text-muted);
   max-width: 42ch;
   margin-inline: auto;
+}
+
+.empty-action {
+  margin-top: 16px;
 }
 
 /* ---------- Footer ---------- */

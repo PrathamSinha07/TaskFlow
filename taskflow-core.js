@@ -309,6 +309,23 @@
     return sorted;
   }
 
+  /* ---------- Submission safety ---------- */
+
+  // Accidental double-activations (double-click, held Enter) land within
+  // this window after a successful submit.
+  const RESUBMIT_WINDOW_MS = 1000;
+
+  /**
+   * True when `now` falls inside the short window after a successful
+   * submission — used to swallow stray re-submits silently instead of
+   * flashing a confusing error at the user.
+   */
+  function isDuplicateResubmit(lastSubmitAt, now) {
+    if (typeof lastSubmitAt !== "number" || typeof now !== "number") return false;
+    const elapsed = now - lastSubmitAt;
+    return elapsed >= 0 && elapsed < RESUBMIT_WINDOW_MS;
+  }
+
   /* ---------- Exports ---------- */
 
   const core = {
@@ -334,7 +351,9 @@
     filterTasks: filterTasks,
     countTasks: countTasks,
     SORT_KEYS: SORT_KEYS,
-    sortTasks: sortTasks
+    sortTasks: sortTasks,
+    RESUBMIT_WINDOW_MS: RESUBMIT_WINDOW_MS,
+    isDuplicateResubmit: isDuplicateResubmit
   };
 
   if (typeof module === "object" && module.exports) {

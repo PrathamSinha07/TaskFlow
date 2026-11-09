@@ -40,6 +40,10 @@
   // DOM references, populated in init() once the page is ready.
   let dom = {};
 
+  // Timestamp of the last successful add/save, used to swallow stray
+  // re-submissions (double-click, held Enter) without flashing an error.
+  let lastSubmitAt = null;
+
   /* =======================================================================
      Storage
      ======================================================================= */
@@ -111,6 +115,46 @@
     window.setTimeout(function () {
       dom.liveStatus.textContent = message;
     }, 50);
+  }
+
+  /**
+   * Moves keyboard focus to a task row's control (edit button by default).
+   * Returns false when the row is no longer visible, so callers can fall
+   * back to a sensible target.
+   */
+  function focusTaskControl(taskId) {
+    const controls = dom.taskList.querySelectorAll("[data-focus-key]");
+    const wanted = taskId + ":edit";
+    for (const control of controls) {
+      if (control.dataset.focusKey === wanted) {
+        control.focus();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Shows a gentle note when the chosen due date is already in the past
+   * (completed tasks are never flagged overdue, so no note for them).
+   */
+  function updateDueNote() {
+    const value = dom.dueDateInput.value;
+    const editingTask = state.editingId ? findTask(state.editingId) : null;
+    const isOverdueCandidate = !editingTask || !editingTask.completed;
+
+    const show =
+      isOverdueCandidate &&
+      core.isValidDueDate(value) &&
+      value < core.getTodayString();
+
+    dom.dueNote.hidden = !show;
+    if (show) {
+      dom.dueNote.textContent =
+        "This date is in the past — the task will show as overdue.";
+    } else {
+      dom.dueNote.textContent = "";
+    }
   }
 
   /* =======================================================================
@@ -212,18 +256,46 @@
       dom.emptyTitle.textContent = "No tasks yet";
       dom.emptyText.textContent =
         "Add your first task using the form and it will show up here.";
+      dom.emptyAction.textContent = "Add your first task";
     } else if (state.search.trim() !== "") {
       dom.emptyTitle.textContent = "No matches";
       dom.emptyText.textContent =
         "No tasks in this view contain “" + state.search.trim() + "”.";
+      dom.emptyAction.textContent = "Clear search";
     } else if (state.filter === "active") {
       dom.emptyTitle.textContent = "Nothing active";
       dom.emptyText.textContent = "All tasks are completed. Nice work.";
+      dom.emptyAction.textContent = "Show all tasks";
     } else {
       dom.emptyTitle.textContent = "No completed tasks yet";
       dom.emptyText.textContent =
         "Tick off a task and it will appear here.";
+      dom.emptyAction.textContent = "Show all tasks";
     }
+  }
+
+  /** One-click way out of whatever empty state the user is looking at. */
+  function handleEmptyAction() {
+    if (state.tasks.length === 0) {
+      dom.titleInput.focus();
+      if (typeof dom.composerPanel.scrollIntoView === "function") {
+        dom.composerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      return;
+    }
+
+    if (state.search.trim() !== "") {
+      clearSearch();
+      return;
+    }
+
+    state.filter = "all";
+    render();
+    announce("Showing all tasks.");
+    const allButton = dom.filterButtons.find(function (button) {
+      return button.dataset.filter === "all";
+    });
+    if (allButton) allButton.focus();
   }
 
   function createTaskElement(task) {
@@ -344,12 +416,25 @@
      Form handling (add + edit)
      ======================================================================= */
 
+  /** Validation copy that matches what the user is currently doing. */
+  function validationMessage() {
+    return state.editingId
+      ? "A task needs a title — your changes were not saved."
+      : "Please enter a task title before saving.";
+  }
+
   function handleFormSubmit(event) {
     event.preventDefault();
 
     const title = core.normalizeTitle(dom.titleInput.value);
     if (!title) {
-      showTitleError("Please enter a task title before saving.");
+      // A second click/Enter right after a successful submit would only
+      // flash a confusing error — ignore it silently instead.
+      if (core.isDuplicateResubmit(lastSubmitAt, Date.now())) {
+        dom.titleInput.focus();
+        return;
+      }
+      showTitleError(validationMessage());
       dom.titleInput.focus();
       return;
     }
@@ -366,12 +451,13 @@
     } else {
       addTask(values);
     }
+    lastSubmitAt = Date.now();
   }
 
   function addTask(values) {
     const task = core.createTask(values);
     if (!task) {
-      showTitleError("Please enter a task title before saving.");
+      showTitleError(validationMessage());
       dom.titleInput.focus();
       return;
     }
@@ -400,7 +486,8 @@
     resetForm();
     render();
     announce("Task updated: " + task.title);
-    dom.titleInput.focus();
+    // Land back on the row that changed, not on the form.
+    if (!focusTaskControl(task.id)) dom.titleInput.focus();
   }
 
   function startEditing(taskId) {
@@ -421,6 +508,7 @@
     dom.cancelButton.hidden = false;
     dom.composerPanel.classList.add("is-editing");
     clearTitleError();
+    updateDueNote();
 
     dom.titleInput.focus();
     dom.titleInput.select();
@@ -428,10 +516,16 @@
   }
 
   function cancelEditing() {
-    const wasEditing = Boolean(state.editingId);
+    const editingId = state.editingId;
+    const wasEditing = Boolean(editingId);
     resetForm();
-    if (wasEditing) announce("Edit cancelled.");
-    dom.titleInput.focus();
+    if (!wasEditing) {
+      dom.titleInput.focus();
+      return;
+    }
+    announce("Edit cancelled.");
+    // Return focus to the row the edit was started from.
+    if (!focusTaskControl(editingId)) dom.titleInput.focus();
   }
 
   /** Clears the form and returns the composer to "New task" mode. */
@@ -446,6 +540,7 @@
     dom.cancelButton.hidden = true;
     dom.composerPanel.classList.remove("is-editing");
     clearTitleError();
+    updateDueNote();
   }
 
   /** After adding, keep priority and due date for rapid batch entry. */
@@ -492,6 +587,12 @@
     );
     if (!confirmed) return;
 
+    // Remember where the row sat so focus can follow the list downward.
+    const visibleBefore = getVisibleTasks();
+    const removedIndex = visibleBefore.findIndex(function (entry) {
+      return entry.id === taskId;
+    });
+
     state.tasks = core.deleteTask(state.tasks, taskId);
 
     if (state.editingId === taskId) resetForm();
@@ -499,10 +600,16 @@
     render();
     announce("Task deleted: " + task.title);
 
-    // Keep the keyboard where it was useful: next task, or the form.
-    const nextEdit = dom.taskList.querySelector('button[data-action="edit"]');
-    if (nextEdit) nextEdit.focus();
-    else dom.titleInput.focus();
+    // Focus the row that took this row's place, the last row if the list
+    // shrank, or the form when nothing is left.
+    const visibleAfter = getVisibleTasks();
+    const targetIndex =
+      removedIndex >= 0
+        ? Math.min(removedIndex, visibleAfter.length - 1)
+        : 0;
+    const target = visibleAfter[targetIndex];
+    if (target && focusTaskControl(target.id)) return;
+    dom.titleInput.focus();
   }
 
   /* =======================================================================
@@ -521,6 +628,7 @@
     dom.clearSearchButton.hidden = true;
     render();
     dom.searchInput.focus();
+    announce("Search cleared.");
   }
 
   function handleFilterClick(event) {
@@ -576,8 +684,33 @@
   }
 
   function handleGlobalKeydown(event) {
-    if (event.key === "Escape" && state.editingId) {
-      cancelEditing();
+    // "/" focuses search — unless the user is busy typing somewhere else.
+    if (
+      event.key === "/" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      const target = event.target;
+      const isTyping =
+        target &&
+        typeof target.closest === "function" &&
+        target.closest("input, textarea, select, [contenteditable]");
+      if (!isTyping) {
+        event.preventDefault();
+        dom.searchInput.focus();
+        dom.searchInput.select();
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      // The local action wins first: Esc in a non-empty search clears it.
+      if (event.target === dom.searchInput && dom.searchInput.value !== "") {
+        clearSearch();
+        return;
+      }
+      if (state.editingId) cancelEditing();
     }
   }
 
@@ -614,7 +747,9 @@
       taskList: document.getElementById("task-list"),
       emptyState: document.getElementById("empty-state"),
       emptyTitle: document.getElementById("empty-title"),
-      emptyText: document.getElementById("empty-text")
+      emptyText: document.getElementById("empty-text"),
+      emptyAction: document.getElementById("empty-action"),
+      dueNote: document.getElementById("due-note")
     };
   }
 
@@ -623,6 +758,8 @@
     dom.titleInput.addEventListener("input", clearTitleError);
     dom.titleInput.addEventListener("keydown", handleTitleKeydown);
     dom.cancelButton.addEventListener("click", cancelEditing);
+    dom.dueDateInput.addEventListener("input", updateDueNote);
+    dom.emptyAction.addEventListener("click", handleEmptyAction);
 
     dom.searchInput.addEventListener("input", handleSearchInput);
     dom.clearSearchButton.addEventListener("click", clearSearch);
