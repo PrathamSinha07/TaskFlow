@@ -467,6 +467,7 @@
 
     state.tasks.unshift(task); // newest first
     state.highlightId = task.id;
+    revealTaskIfHidden(task.id);
 
     saveTasks();
     clearTitleField();
@@ -484,6 +485,7 @@
     }
 
     state.highlightId = task.id;
+    revealTaskIfHidden(task.id);
 
     saveTasks();
     resetForm();
@@ -496,6 +498,17 @@
   function startEditing(taskId) {
     const task = findTask(taskId);
     if (!task) return;
+
+    // Clicking Edit while a new task is half-typed would silently throw
+    // the draft away — confirm before replacing it.
+    if (!state.editingId && dom.titleInput.value.trim() !== "") {
+      const discardDraft = window.confirm(
+        "Discard the task you are currently typing and edit “" +
+          task.title +
+          "” instead?"
+      );
+      if (!discardDraft) return;
+    }
 
     state.editingId = task.id;
     dom.titleInput.value = task.title;
@@ -821,6 +834,17 @@
     dom.clearSearchButton.hidden = true;
   }
 
+  /**
+   * A task saved while a search or filter hides it would leave the user
+   * staring at an unchanged list — clear the view so it shows up.
+   */
+  function revealTaskIfHidden(taskId) {
+    if (core.isTaskInView(state.tasks, state.filter, state.search, taskId)) {
+      return;
+    }
+    resetTaskView();
+  }
+
   function handleSearchInput() {
     state.search = dom.searchInput.value;
     dom.clearSearchButton.hidden = state.search.length === 0;
@@ -880,6 +904,11 @@
   }
 
   function handleTitleKeydown(event) {
+    // Keys that belong to an IME composition (Chinese, Japanese, Korean
+    // input) are not ours: preventDefault here would cancel the candidate
+    // window or submit a half-typed title.
+    if (event.isComposing || event.keyCode === 229) return;
+
     // Explicit Enter handling guarantees submission across browsers
     // (and keeps the behaviour testable).
     if (event.key === "Enter") {
@@ -889,6 +918,9 @@
   }
 
   function handleGlobalKeydown(event) {
+    // Never steal Escape or "/" from an active IME composition.
+    if (event.isComposing || event.keyCode === 229) return;
+
     // "/" focuses search — unless the user is busy typing somewhere else.
     if (
       event.key === "/" &&

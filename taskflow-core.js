@@ -13,19 +13,45 @@
   const FILTERS = ["all", "active", "completed"];
   const MAX_TITLE_LENGTH = 120;
   const MAX_DESCRIPTION_LENGTH = 500;
+  // Ids stay short and HTML-safe: 1–128 chars, matching the pattern an
+  // import file must satisfy.
+  const MAX_ID_LENGTH = 128;
+  // Id shapes this app itself generates (UUIDs and "task-…" fallbacks).
+  // Enforced on stored and imported ids alike, so a file exported by
+  // TaskFlow can always be imported back.
+  const IMPORT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
   /* ---------- Normalisation (single source of truth for field rules) ---------- */
+
+  /**
+   * Trims and caps text at `max` UTF-16 units without ever leaving a
+   * trailing space or splitting a surrogate pair — a cap that cuts an
+   * astral character (emoji) in half would store a lone surrogate and
+   * render as a broken character.
+   */
+  function capText(value, max) {
+    let text = value.trim();
+    if (text.length > max) {
+      text = text.slice(0, max);
+      const last = text.charCodeAt(text.length - 1);
+      if (last >= 0xd800 && last <= 0xdbff) {
+        text = text.slice(0, -1); // drop an orphaned high surrogate
+      }
+      text = text.trim();
+    }
+    return text;
+  }
 
   /** Trimmed title, capped at 120 chars, or null when nothing is usable. */
   function normalizeTitle(value) {
     if (typeof value !== "string") return null;
-    const title = value.trim().slice(0, MAX_TITLE_LENGTH);
+    const title = capText(value, MAX_TITLE_LENGTH);
     return title === "" ? null : title;
   }
 
   function normalizeDescription(value) {
     if (typeof value !== "string") return "";
-    return value.trim().slice(0, MAX_DESCRIPTION_LENGTH);
+    return capText(value, MAX_DESCRIPTION_LENGTH);
   }
 
   function normalizePriority(value) {
@@ -132,11 +158,15 @@
     const title = normalizeTitle(entry.title);
     if (!title) return null;
 
+    // Ids are trimmed and capped, and anything that is not an id shape
+    // this app can generate (spaces, markup, absurd lengths) is replaced
+    // with a fresh one — a bad id must never reach HTML attributes or an
+    // export file that could no longer be imported.
+    const id = typeof entry.id === "string" ? capText(entry.id, MAX_ID_LENGTH) : "";
+    const safeId = IMPORT_ID_PATTERN.test(id) ? id : createTaskId();
+
     return {
-      id:
-        typeof entry.id === "string" && entry.id.trim()
-          ? entry.id
-          : createTaskId(),
+      id: safeId,
       title: title,
       description:
         typeof entry.description === "string"
@@ -333,9 +363,6 @@
   // 1 MB comfortably holds thousands of tasks while keeping a stray or
   // hostile file from stalling the tab while it is parsed.
   const MAX_IMPORT_BYTES = 1024 * 1024;
-  // Ids that may enter the app through an import file: the shapes this app
-  // itself generates (UUIDs and "task-…" fallbacks), 1–128 characters.
-  const IMPORT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
   /**
    * Builds the downloadable export document. Every task is re-sanitised
@@ -523,6 +550,7 @@
     FILTERS: FILTERS,
     MAX_TITLE_LENGTH: MAX_TITLE_LENGTH,
     MAX_DESCRIPTION_LENGTH: MAX_DESCRIPTION_LENGTH,
+    MAX_ID_LENGTH: MAX_ID_LENGTH,
     normalizeTitle: normalizeTitle,
     normalizeDescription: normalizeDescription,
     normalizePriority: normalizePriority,
