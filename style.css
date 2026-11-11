@@ -598,6 +598,57 @@ input[type="search"].search-input {
   border-color: #414958;
 }
 
+/* ---------- Data export / import ---------- */
+.data-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.data-bar-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: -2px;
+}
+
+.btn-compact {
+  padding: 7px 13px;
+  font-size: 0.84rem;
+}
+
+.data-feedback {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 9px 13px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 0.83rem;
+  overflow-wrap: anywhere;
+}
+
+.data-feedback[data-tone="success"] {
+  background: var(--success-soft);
+  border-color: rgba(87, 201, 139, 0.35);
+  color: #7bdba9;
+}
+
+.data-feedback[data-tone="error"] {
+  background: var(--danger-soft);
+  border-color: rgba(232, 99, 111, 0.4);
+  color: #f28d97;
+}
+
+.data-feedback[data-tone="info"] {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line-strong);
+  color: var(--text-soft);
+}
+
 /* ---------- Task list ---------- */
 .task-list {
   display: flex;
@@ -927,6 +978,10 @@ input[type="search"].search-input {
 
   .sort-box {
     width: 100%;
+  }
+
+  .data-bar .btn-compact {
+    flex: 1 1 auto;
   }
 
   .task-item {

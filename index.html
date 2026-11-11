@@ -163,6 +163,24 @@
         </div>
       </div>
 
+      <div class="data-bar">
+        <span class="data-bar-label" id="data-bar-label">Data</span>
+        <button type="button" class="btn btn-ghost btn-compact" id="export-btn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+          </svg>
+          Export tasks
+        </button>
+        <button type="button" class="btn btn-ghost btn-compact" id="import-btn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
+          </svg>
+          Import tasks
+        </button>
+        <input type="file" id="import-file" accept=".json,application/json" aria-label="Import tasks from a JSON file" hidden>
+        <p class="data-feedback" id="data-feedback" role="status" aria-live="polite" data-tone="success" hidden></p>
+      </div>
+
       <ul class="task-list" id="task-list" aria-labelledby="tasks-heading"></ul>
 
       <div class="empty-state" id="empty-state" hidden>

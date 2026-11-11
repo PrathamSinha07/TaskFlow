@@ -44,6 +44,9 @@
   // re-submissions (double-click, held Enter) without flashing an error.
   let lastSubmitAt = null;
 
+  // Timer that hides the export/import feedback message again.
+  let dataFeedbackTimer = null;
+
   /* =======================================================================
      Storage
      ======================================================================= */
@@ -613,8 +616,210 @@
   }
 
   /* =======================================================================
+     Data export / import
+     ======================================================================= */
+
+  /** Shows a success, error or info message next to the data controls. */
+  function showDataFeedback(message, tone) {
+    const safeTone =
+      tone === "error" || tone === "info" ? tone : "success";
+    dom.dataFeedback.textContent = message;
+    dom.dataFeedback.dataset.tone = safeTone;
+    dom.dataFeedback.hidden = false;
+
+    if (dataFeedbackTimer) window.clearTimeout(dataFeedbackTimer);
+    dataFeedbackTimer = window.setTimeout(hideDataFeedback, 9000);
+  }
+
+  function hideDataFeedback() {
+    if (dataFeedbackTimer) {
+      window.clearTimeout(dataFeedbackTimer);
+      dataFeedbackTimer = null;
+    }
+    dom.dataFeedback.hidden = true;
+    dom.dataFeedback.textContent = "";
+  }
+
+  /** Downloads every task as a dated, pretty-printed JSON file. */
+  function handleExport() {
+    let json;
+    let filename;
+    let count;
+
+    try {
+      const payload = core.buildExportDocument(state.tasks);
+      json = JSON.stringify(payload, null, 2);
+      filename = core.buildExportFilename(core.getTodayString());
+      count = payload.count;
+    } catch (error) {
+      console.warn("TaskFlow: export could not be built.", error);
+      showDataFeedback("Export failed — the task list could not be read.", "error");
+      announce("Export failed.");
+      return;
+    }
+
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.rel = "noopener";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 1000);
+    } catch (error) {
+      console.warn("TaskFlow: export could not be downloaded.", error);
+      showDataFeedback(
+        "Export failed — this browser could not start the download.",
+        "error"
+      );
+      announce("Export failed.");
+      return;
+    }
+
+    const message =
+      count === 0
+        ? "Exported an empty task list to " + filename + "."
+        : "Exported " +
+          count +
+          (count === 1 ? " task" : " tasks") +
+          " to " +
+          filename +
+          ".";
+    showDataFeedback(message, "success");
+    announce(message);
+  }
+
+  /** Reads the chosen file, validates it and merges it into the list. */
+  async function handleImportFile() {
+    const input = dom.importFile;
+    const file = input.files && input.files[0];
+    // Reset first so choosing the same file again still fires "change".
+    input.value = "";
+    if (!file) return;
+
+    if (file.size > core.MAX_IMPORT_BYTES) {
+      showDataFeedback(
+        "Import failed — the file is too large (limit is 1 MB).",
+        "error"
+      );
+      announce("Import failed: the file is too large.");
+      return;
+    }
+
+    let text;
+    try {
+      text = await file.text();
+    } catch (error) {
+      console.warn("TaskFlow: import file could not be read.", error);
+      showDataFeedback("Import failed — the file could not be read.", "error");
+      announce("Import failed: the file could not be read.");
+      return;
+    }
+
+    const result = core.parseImportedTasks(text);
+    if (!result.ok) {
+      showDataFeedback("Import failed — " + result.error, "error");
+      announce("Import failed: " + result.error);
+      return;
+    }
+
+    // Never overwrite an existing task without asking first.
+    const existingIds = new Set(
+      state.tasks.map(function (task) {
+        return task.id;
+      })
+    );
+    const conflicts = result.tasks.filter(function (task) {
+      return existingIds.has(task.id);
+    }).length;
+
+    let replaceExisting = false;
+    if (conflicts > 0) {
+      replaceExisting = window.confirm(
+        conflicts +
+          " of the " +
+          result.tasks.length +
+          " tasks in this file already exist.\n\n" +
+          "OK — replace your existing copies with the imported ones (new tasks are added too).\n" +
+          "Cancel — keep your current copies and only add the new tasks."
+      );
+    }
+
+    const merge = core.mergeImportedTasks(state.tasks, result.tasks, replaceExisting);
+
+    if (merge.added === 0 && merge.replaced === 0) {
+      const keptMessage =
+        "Nothing imported — " +
+        (merge.skipped === 1
+          ? "the task in the file already exists."
+          : "all " + merge.skipped + " tasks in the file already exist.");
+      showDataFeedback(keptMessage, "info");
+      announce(keptMessage);
+      return;
+    }
+
+    state.tasks = merge.tasks;
+
+    // Reveal the view when the imported tasks would otherwise stay hidden.
+    const changedTasks = result.tasks.filter(function (task) {
+      return replaceExisting || !existingIds.has(task.id);
+    });
+    const anyHidden = changedTasks.some(function (task) {
+      return !core.isTaskInView(state.tasks, state.filter, state.search, task.id);
+    });
+    if (anyHidden) resetTaskView();
+
+    saveTasks();
+    render();
+
+    let message;
+    if (merge.added > 0 && merge.replaced > 0) {
+      message =
+        "Imported " +
+        merge.added +
+        " new " +
+        (merge.added === 1 ? "task" : "tasks") +
+        " and updated " +
+        merge.replaced +
+        " existing " +
+        (merge.replaced === 1 ? "task" : "tasks") +
+        ".";
+    } else if (merge.added > 0) {
+      message =
+        "Imported " + merge.added + (merge.added === 1 ? " task." : " tasks.");
+    } else {
+      message =
+        "Updated " + merge.replaced + (merge.replaced === 1 ? " task." : " tasks.");
+    }
+    if (merge.skipped > 0) {
+      message +=
+        " " +
+        merge.skipped +
+        (merge.skipped === 1 ? " task was" : " tasks were") +
+        " kept unchanged.";
+    }
+
+    showDataFeedback(message, "success");
+    announce(message);
+  }
+
+  /* =======================================================================
      Search, filters, keyboard
      ======================================================================= */
+
+  /** Drops the active search and filter so every task is visible again. */
+  function resetTaskView() {
+    state.filter = "all";
+    state.search = "";
+    dom.searchInput.value = "";
+    dom.clearSearchButton.hidden = true;
+  }
 
   function handleSearchInput() {
     state.search = dom.searchInput.value;
@@ -749,7 +954,11 @@
       emptyTitle: document.getElementById("empty-title"),
       emptyText: document.getElementById("empty-text"),
       emptyAction: document.getElementById("empty-action"),
-      dueNote: document.getElementById("due-note")
+      dueNote: document.getElementById("due-note"),
+      exportButton: document.getElementById("export-btn"),
+      importButton: document.getElementById("import-btn"),
+      importFile: document.getElementById("import-file"),
+      dataFeedback: document.getElementById("data-feedback")
     };
   }
 
@@ -771,6 +980,12 @@
 
     dom.taskList.addEventListener("change", handleListChange);
     dom.taskList.addEventListener("click", handleListClick);
+
+    dom.exportButton.addEventListener("click", handleExport);
+    dom.importButton.addEventListener("click", function () {
+      dom.importFile.click();
+    });
+    dom.importFile.addEventListener("change", handleImportFile);
 
     document.addEventListener("keydown", handleGlobalKeydown);
   }

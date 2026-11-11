@@ -326,6 +326,196 @@
     return elapsed >= 0 && elapsed < RESUBMIT_WINDOW_MS;
   }
 
+  /* ---------- Data export / import ---------- */
+
+  const EXPORT_APP = "TaskFlow";
+  const EXPORT_FORMAT_VERSION = 1;
+  // 1 MB comfortably holds thousands of tasks while keeping a stray or
+  // hostile file from stalling the tab while it is parsed.
+  const MAX_IMPORT_BYTES = 1024 * 1024;
+  // Ids that may enter the app through an import file: the shapes this app
+  // itself generates (UUIDs and "task-…" fallbacks), 1–128 characters.
+  const IMPORT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+  /**
+   * Builds the downloadable export document. Every task is re-sanitised
+   * first so a file produced by TaskFlow can always be imported back.
+   * `exportedAt` may be passed for deterministic tests.
+   */
+  function buildExportDocument(tasks, exportedAt) {
+    const list = Array.isArray(tasks) ? tasks : [];
+    const exported = [];
+    for (const entry of list) {
+      const task = sanitizeTask(entry);
+      if (task) exported.push(task);
+    }
+
+    return {
+      app: EXPORT_APP,
+      formatVersion: EXPORT_FORMAT_VERSION,
+      exportedAt:
+        typeof exportedAt === "string" && exportedAt !== ""
+          ? exportedAt
+          : new Date().toISOString(),
+      count: exported.length,
+      tasks: exported
+    };
+  }
+
+  /** "taskflow-tasks-YYYY-MM-DD.json" — falls back to today's date. */
+  function buildExportFilename(dateString) {
+    const date =
+      typeof dateString === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+        ? dateString
+        : getTodayString();
+    return "taskflow-tasks-" + date + ".json";
+  }
+
+  /**
+   * Validates an import file's text and returns either
+   *   { ok: true,  tasks: [...] }   — a clean, de-duplicated task list, or
+   *   { ok: false, error: "…" }     — a user-facing reason to reject it.
+   *
+   * Policy: structure and identity are strict (a bad title, id or a
+   * duplicate id rejects the whole file), while repairable field values
+   * (priority, due date, completion flag, length caps) are normalised —
+   * the same rules LocalStorage data is repaired with.
+   */
+  function parseImportedTasks(text) {
+    if (typeof text !== "string" || text.trim() === "") {
+      return { ok: false, error: "The file is empty." };
+    }
+    if (text.length > MAX_IMPORT_BYTES) {
+      return {
+        ok: false,
+        error: "The file is too large to import (limit is 1 MB)."
+      };
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      return { ok: false, error: "The file is not valid JSON." };
+    }
+
+    let entries;
+    if (Array.isArray(parsed)) {
+      entries = parsed;
+    } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.tasks)) {
+      entries = parsed.tasks;
+    } else {
+      return {
+        ok: false,
+        error: "The file must contain a list of TaskFlow tasks."
+      };
+    }
+
+    if (entries.length === 0) {
+      return { ok: false, error: "The file does not contain any tasks." };
+    }
+
+    const tasks = [];
+    const seenIds = new Set();
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      const label = "Task " + (index + 1);
+
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return { ok: false, error: label + " is not a valid task object." };
+      }
+      if (!normalizeTitle(entry.title)) {
+        return { ok: false, error: label + " is missing a title." };
+      }
+
+      let id;
+      if (entry.id !== undefined) {
+        if (typeof entry.id !== "string" || !IMPORT_ID_PATTERN.test(entry.id)) {
+          return { ok: false, error: label + " has an invalid id." };
+        }
+        if (seenIds.has(entry.id)) {
+          return {
+            ok: false,
+            error: label + ' repeats the id "' + entry.id + '".'
+          };
+        }
+        id = entry.id;
+      }
+
+      // Missing ids are generated, so a hand-written file still imports.
+      while (id === undefined || seenIds.has(id)) {
+        id = createTaskId();
+      }
+      seenIds.add(id);
+
+      const task = sanitizeTask(Object.assign({}, entry, { id: id }));
+      if (!task) {
+        return { ok: false, error: label + " is not a valid task object." };
+      }
+      tasks.push(task);
+    }
+
+    return { ok: true, tasks: tasks };
+  }
+
+  /**
+   * Merges validated imported tasks into the existing list without losing
+   * anything that is already there.
+   *   - new ids are added at the front (creation order stays newest first)
+   *   - ids that already exist are only replaced when `replaceExisting`
+   *     is true (the UI asks for that confirmation first); otherwise the
+   *     current task is kept and counted as skipped
+   * Returns { tasks, added, replaced, skipped }.
+   */
+  function mergeImportedTasks(existing, imported, replaceExisting) {
+    const current = Array.isArray(existing) ? existing.slice() : [];
+    const incoming = Array.isArray(imported) ? imported : [];
+    const replace = replaceExisting === true;
+
+    const indexById = new Map();
+    current.forEach(function (task, index) {
+      if (!indexById.has(task.id)) indexById.set(task.id, index);
+    });
+
+    const additions = [];
+    let replaced = 0;
+    let skipped = 0;
+
+    incoming.forEach(function (task) {
+      const index = indexById.get(task.id);
+      if (index === undefined) {
+        additions.push(task);
+        return;
+      }
+      if (replace) {
+        current[index] = task;
+        replaced += 1;
+      } else {
+        skipped += 1;
+      }
+    });
+
+    return {
+      tasks: additions.concat(current),
+      added: additions.length,
+      replaced: replaced,
+      skipped: skipped
+    };
+  }
+
+  /**
+   * True when the task with `taskId` would appear under the given
+   * filter + search view — used to decide whether a just-saved task is
+   * hidden by the current view and needs revealing.
+   */
+  function isTaskInView(tasks, filter, search, taskId) {
+    if (!Array.isArray(tasks)) return false;
+    return filterTasks(tasks, filter, search).some(function (task) {
+      return task.id === taskId;
+    });
+  }
+
   /* ---------- Exports ---------- */
 
   const core = {
@@ -353,7 +543,16 @@
     SORT_KEYS: SORT_KEYS,
     sortTasks: sortTasks,
     RESUBMIT_WINDOW_MS: RESUBMIT_WINDOW_MS,
-    isDuplicateResubmit: isDuplicateResubmit
+    isDuplicateResubmit: isDuplicateResubmit,
+    EXPORT_APP: EXPORT_APP,
+    EXPORT_FORMAT_VERSION: EXPORT_FORMAT_VERSION,
+    MAX_IMPORT_BYTES: MAX_IMPORT_BYTES,
+    IMPORT_ID_PATTERN: IMPORT_ID_PATTERN,
+    buildExportDocument: buildExportDocument,
+    buildExportFilename: buildExportFilename,
+    parseImportedTasks: parseImportedTasks,
+    mergeImportedTasks: mergeImportedTasks,
+    isTaskInView: isTaskInView
   };
 
   if (typeof module === "object" && module.exports) {
