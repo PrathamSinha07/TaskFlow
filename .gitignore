@@ -12,3 +12,12 @@ desktop.ini
 
 # Logs
 *.log
+
+# Dependencies (none today — kept out just in case)
+node_modules/
+
+# Environment / secrets — never committed
+.env
+.env.*
+*.pem
+*.key
